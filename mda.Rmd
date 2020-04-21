@@ -1,0 +1,195 @@
+---
+title: "MDA Functions"
+output: html_document
+author: "David Brown"
+---
+
+
+## Multidimensional Analysis
+
+The following functions can be used to carry out Multidimensional Analysis on normalized counts of linguistic variables. MDA is procedure pioneered and popularized by Biber and is commonly used to explore register and genre variation, though it has been applied to other kinds of variation, as well <https://link.springer.com/article/10.1007/BF00136979>.
+
+## Load Packages
+
+First, we'll load the required packages.
+
+```{r load_packages}
+
+library(tidyverse)
+library(nFactors)
+
+```
+
+## Load Function
+
+Now, we'll load the get_loadings() function. Outputs for further analysis can be generated from the function, which takes 4 arugments: m, n, cor_min, and get. The first, m, is a dataframe of normalized variable counts, with the **one column** being the factor or categorical variable under investigation. This is usually a text-type, discipline, or genre, but can be any category of interest. But it must be **a factor** and that factor must be **a single column**.
+
+The second arugment, n, designates the number of factors, ususally determined from a scree plot. The third, cor_min, specifies a threshold at which a variable will be trimmed if it does not correlate with any other variable. The last, get, specifies the output to be returned.
+
+```{r mda_function}
+
+get_loadings <- function(m, n, cor_min=.20, get=c("loadings", "group_means", "dim_scores")) {
+  
+  # retrieve numberic variables
+  nums <- unlist(lapply(m, is.numeric))
+  
+  # text conditions
+  if (sum(nums == FALSE) != 1) stop ("you must have a single categorial variable")
+  if (sum(nums == TRUE) < 2) stop ("you must have multiple numeric variables")
+  
+  # separate numeric variables from categorical variable
+  d <- m[ , nums]
+  g <- m[ , !nums]
+  
+  # check to see if category is factor
+  if (is.factor(g) == FALSE) stop ("convert your categorical variable to a factor")
+  
+  # create correlation matrix
+  m_cor <- cor(d, method = "pearson")
+  diag(m_cor) <- 0
+  
+  # trim variables that fall below correlation threshold
+  threshold <- apply(m_cor, 1, function(x) max(abs(x), na.rm = T) > .2)
+  m_trim <- d[, threshold]
+  m_z <- data.frame(scale(m_trim, center = TRUE, scale = TRUE))
+  
+  # carry out factor analysis and return loadings
+  fa1 <- factanal(m_trim, factors = n, rotation="promax")
+  f_loadings <- as.data.frame(unclass(fa1$loadings))
+  if(get=="loadings") return(f_loadings)
+  
+  idx <- seq(1:ncol(f_loadings))
+  
+  # generate scores for either individual observations or cagegory means
+  g_scores <- lapply(idx, function(i){
+    pos <- row.names(f_loadings)[which(f_loadings[,i] > 0.35,arr.ind=T)]
+    neg <- row.names(f_loadings)[which(f_loadings[,i] < -0.35,arr.ind=T)]
+    pos_sums <- rowSums(m_z[pos])
+    neg_sums <- rowSums(m_z[neg])
+    dim_score <- mapply(function (x,y) x-y, pos_sums, neg_sums)
+    dim_score <- data.frame(cbind(dim_score, as.character(g)), stringsAsFactors = F)
+    colnames(dim_score) <- c("score", "group")
+    dim_score$score <- as.numeric(dim_score$score)
+    if(get=="dim_scores") return(dim_score)
+    group_score <- aggregate(score~group, dim_score, mean)
+    return(group_score)
+  })
+  
+  # format scores and return
+  if(get=="dim_scores") a_scores <- lapply(idx, function(i) data.table::setnames(g_scores[[i]],  c(colnames(f_loadings[i]), "group")))
+    if(get=="dim_scores") a_scores <- do.call("cbind", a_scores)
+  if(get=="dim_scores") a_scores <- a_scores[,unique(colnames(a_scores))]
+  if(get=="dim_scores") a_scores <- a_scores[c("group", setdiff(names(a_scores), "group"))]
+  if(get=="dim_scores") return(a_scores)
+  
+  if(get=="group_means") g_scores <- lapply(idx, function(i) data.table::setnames(g_scores[[i]],  c("group", colnames(f_loadings[i]))))
+  if(get=="group_means") g_scores <- suppressWarnings(Reduce(function(...) merge(..., by = "group", all=T), g_scores))
+  if(get=="group_means") return(g_scores)
+}
+
+```
+
+## Generate Some Sample Data
+
+Let's create a simple data.frame so we see how the function works. Here is a simplified output of some DocuScope counts generated from MICUSP data.
+
+```{r some_data, echo=FALSE}
+
+df <- data.frame(
+text_name = c("BIO.G0.10.2.txt", "BIO.G0.17.1.txt", "CEE.G1.05.1.txt", "CEE.G0.05.2.txt", "CLS.G1.03.1.txt", "CLS.G0.02.1.txt", "ECO.G1.01.1.txt", "ECO.G3.01.1.txt", "EDU.G1.03.1.txt", "EDU.G1.10.1.txt", "ENG.G1.03.1.txt", "ENG.G0.24.1.txt", "HIS.G1.07.1.txt", "HIS.G2.01.1.txt", "IOE.G0.03.1.txt", "IOE.G0.10.1.txt", "LIN.G1.06.2.txt", "LIN.G0.06.1.txt", "MEC.G0.08.4.txt", "MEC.G0.02.1.txt", "NRE.G1.27.1.txt", "NRE.G1.31.1.txt", "NUR.G2.03.3.txt", "NUR.G2.03.4.txt", "PHI.G1.04.1.txt", "PHI.G0.06.6.txt", "PHY.G2.01.1.txt", "PHY.G2.05.1.txt", "POL.G0.05.1.txt", "POL.G0.45.2.txt", "PSY.G2.10.5.txt", "PSY.G2.08.1.txt", "SOC.G1.05.2.txt", "SOC.G0.01.1.txt"),
+AcademicTerms = c(12.51499400239904, 10.149572649572649, 7.590759075907591, 5.112781954887218, 3.783783783783784, 5.213270142180095, 5.31062124248497, 5.500331345261763, 6.508492156100091, 4.656319290465632, 6.927274752199576, 4.742715437073776, 8.256880733944955, 6.612002791346824, 8.150851581508515, 5.05050505050505, 10.184023421162694, 12.629523952545426, 9.547738693467336, 8.24742268041237, 4.686192468619247, 3.8939967550027044, 7.668711656441718, 6.309708953565875, 6.765523632993513, 3.009259259259259, 4.605678233438486, 8.661417322834646, 4.515474378488077, 2.3183391003460208, 7.191011235955057, 4.3367935409457905, 5.077574047954866, 5.057216685123662),
+Character = c(2.9988004798080765, 1.46011396011396, 2.145214521452145, 1.3533834586466165, 8.756756756756756, 6.082148499210111, 4.0247160988643955, 5.964214711729622, 7.779074290159471, 7.031992397846057, 5.290121394364629, 6.602603843769374, 6.116207951070336, 3.6636427076064204, 4.866180048661801, 3.4090909090909087, 3.8686741948975327, 3.2587475596936475, 2.9522613065326633, 2.405498281786942, 1.8410041841004186, 3.1638723634396975, 8.224693251533742, 9.375694290157742, 6.719184430027804, 3.2407407407407405, 2.239747634069401, 3.477690288713911, 6.1897513952308465, 4.256055363321799, 5.348314606741573, 5.628604382929643, 5.218617771509168, 3.9867109634551494),
+Orphaned = c(4.518192722910835, 6.730769230769231, 6.582324899156582, 2.4060150375939853, 2.540540540540541, 3.5545023696682465, 4.47561790247161, 6.229290921139827, 4.835991183715804, 2.1539436173582516, 5.067379440917697, 4.8047117172969624, 3.058103975535168, 2.6517794836008375, 6.569343065693431, 5.008417508417509, 5.959849435382685, 5.150923562096411, 7.097989949748744, 5.360824742268041, 2.6778242677824267, 2.4878312601406165, 5.04217791411043, 6.820706509664519, 2.2706209453197403, 1.6203703703703702, 4.73186119873817, 6.692913385826772, 3.450025367833587, 3.633217993079585, 5.348314606741573, 4.775086505190312, 4.231311706629055, 4.57733480989295),
+Updates = c(0.11995201919232307, 0.17806267806267806, 0.27502750275027504, 1.2030075187969926, 0.5405405405405406, 0.1579778830963665, 0.250501002004008, 0.3976143141153081, 0.18151173343705432, 0.25340513145391197, 0.13364517206815904, 0.402975821450713, 0.20387359836901123, 0.26168876482903, 0.48661800486618007, 0.08417508417508417, 0.3345880384776244, 0.4655353656705211, 0, 0, 0.16736401673640167, 0.4597079502433748, 0.057515337423312884, 0.13330371028660298, 0.13901760889712697, 0.23148148148148145, 0.2523659305993691, 0.13123359580052493, 0.2536783358701167, 0.4844290657439446, 0.22471910112359553, 0.16147635524798157, 0.094029149036201215, 0.2583979328165375),
+stringsAsFactors = F)
+
+```
+
+Note that in our sample data.frame, we don't have a column for a categorical variable. The category is actually embedded in the first letters of the file name: "BIO" indicates biology, "CLS" classics, and so on.
+
+For your own data, you would likly read in a .csv file (setting the correct path, of course).
+
+```{r read_csv}
+
+# df <- read_csv("/Users/user/ds_output/csv/CLUSTER_micusp_body.csv")
+
+
+```
+
+So first, we need to extract this information and format it as a factor (or categorical variable). We'll just call it "Group".
+
+```{r create_cat}
+
+Group <- df %>% dplyr::select(text_name) %>% 
+  mutate(text_name = str_extract(text_name, "^[A-Z]+")) %>%
+  mutate(text_name = as.factor(text_name)) %>%
+  rename(Group = text_name)
+
+```
+
+Although this data has only a few columns, in a full DocuScope output (or something like part-of-speech counts) we'd have many. So we'll do what we'd do with more complicated data.
+
+We can use dplyr to select a sequence of columns we'd like to keep by their names, and here we drop a column we want to omit from our analysis: "Orphaned".
+
+
+```{r select_cols}
+df <- dplyr::select(df, AcademicTerms:Updates, -Orphaned)
+```
+
+Finally, we can combine our factor and our counts into a singe data.frame that's ready for processing.
+
+```{r final_df}
+df <- data.frame(Group, df)
+```
+
+There are a variety of ways to generate scree plots for factor analysis. Here's one option. But note that you need to omit any non-numeric columns for plotting. So here we're passing only columns 2:4 to the function. Our data aren't very robust, so we're not going to get a great result here.
+
+```{r plot_scree}
+psych::fa.parallel(df[,2:4], fa="fa", main = "Scree Plot", show.legend=FALSE)
+```
+
+We'll proceed with 1 factor. Remember that the number of factors is specified in the second argrument. And we're going to generate 3 different outputs: 1 for the loadings, 1 for the means, and 1 for the scores of individual texts.
+
+```{r get_factors}
+df_loadings <- get_loadings(df, 1, get = "loadings")
+df_means <- get_loadings(df, 1, get = "group_means")
+df_scores <- get_loadings(df, 1, get = "dim_scores")
+
+```
+
+For our stick plot, we'll use the output for the group means: df_means. We'll also use the ggrepel package for our labeling. Note that when you have multiple factors, you just change the y value in aes to Factor2, Factor3, and so on. You can also pass other values to labels to make them more reader-friendly.
+
+```{r plotting}
+ggplot(df_means, aes(y = Factor1, x = 1, label = group)) +
+  geom_point(color = RColorBrewer::brewer.pal(3, "Dark2")[2]) +
+  theme_classic() +
+  theme(
+    axis.line.x  = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.x  = element_blank(),
+    axis.title = element_blank()
+  ) +
+  ggrepel::geom_text_repel(
+    nudge_x      = 0.25,
+    direction    = "y",
+    hjust        = 0,
+    segment.size = 0.1,
+    size = 3
+  ) +
+  xlim(1, 2)
+```
+
+To test the analysis with one-way ANOVA, we use the result of the dim_scores for each text. First, we run our ANOVA and check the summary. As with the plotting, we would repeat this for each factor: Factor2, Factor3, etc.
+
+```{r anova}
+f_aov <- aov(Factor1 ~ group, data = df_scores)
+summary(f_aov)
+```
+
+Finally, we can generate an r-squared using linear regression.
+
+```{r regression}
+f_lm <- lm(Factor1 ~ group, data = df_scores)
+summary(f_lm)
+```
+
