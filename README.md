@@ -1,4 +1,4 @@
-##Multidimensitonal Analysis
+## Multidimensitonal Analysis
 This repository contains a function and accomanying notebook for carrying out Multidimenstional Analysis, as well as evaluating and plotting the results in R.
 
 MDA is statistical procedure developed and pioneered by [Douglas Biber](https://www.jstor.org/stable/30204629?seq=1). In linguistic analysis, MDA can be useful in:
